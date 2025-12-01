@@ -398,6 +398,16 @@ describe StringScanner do
     end
   end
 
+  describe "#read_char" do
+    it "advances by one character at a time" do
+      s = StringScanner.new("文字列")
+      s.read_char.should eq('文')
+      s.read_char.should eq('字')
+      s.read_char.should eq('列')
+      s.read_char.should be_nil
+    end
+  end
+
   describe "#reset" do
     it "resets the scan offset to the beginning and clears the last match" do
       s = StringScanner.new("this is a string")

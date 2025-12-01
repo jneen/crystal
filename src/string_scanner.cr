@@ -126,6 +126,13 @@ class StringScanner
     result
   end
 
+  # Reads a single character from the string, or returns nil if at the end.
+  def read_char : Char?
+    char = current_char? || return nil
+    @byte_offset += char.bytesize
+    char
+  end
+
   def unscan : Nil
     match = @last_match
     return if match.nil?
