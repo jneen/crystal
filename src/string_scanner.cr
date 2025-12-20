@@ -72,6 +72,10 @@ class StringScanner
   end
 
   # Sets the *position* of the scan offset.
+  #
+  # NOTE: Moving the scan head with this method can cause performance issues in
+  # multibyte strings. For a more performant way to move the head, see
+  # [`#skip(Int)`](#skip%28pattern%3AInt%29%3AInt32%7CNil-instance-method).
   def offset=(position : Int)
     raise IndexError.new unless position >= 0
     @byte_offset = @str.char_index_to_byte_index(position) || @str.bytesize
@@ -84,7 +88,11 @@ class StringScanner
 
   # Tries to match with *pattern* at the current position. If there's a match,
   # the scanner advances the scan offset, the last match is saved, and it
-  # returns the matched string. Otherwise, the scanner returns `nil`.
+  # returns the matched string. Otherwise, the scanner returns `nil`. If *pattern*
+  # is an Int, the scanner will be advanced by that number of characters, and the
+  # scanned string returned. If *pattern* is an Int, then it is considered a match
+  # if there are at least that many characters left in the string, and will return
+  # nil otherwise.
   #
   # ```
   # require "string_scanner"
@@ -94,7 +102,9 @@ class StringScanner
   # s.scan(/\w+/)  # => nil
   # s.scan(/\s\w/) # => " s"
   # s.scan('t')    # => "t"
-  # s.scan("ring") # => "ring"
+  # s.scan(2)      # => "ri"
+  # s.scan(5)      # => nil
+  # s.scan("ng")   # => "ng"
   # s.scan(/.*/)   # => ""
   # ```
   def scan(pattern : Regex, *, options : Regex::MatchOptions = Regex::MatchOptions::None) : String?
@@ -109,6 +119,26 @@ class StringScanner
   # :ditto:
   def scan(pattern : Char) : String?
     match(pattern, advance: true, anchored: true)
+  end
+
+  # Advances the offset by *len* chars, and returns a string of that length.
+  #
+  # NOTE: If there are less than the requested number of characters
+  # remaining in the string, this method will return nil and _not advance
+  # the scan head_. To obtain the entire rest of the input string, use `#rest`.
+  def scan(len : Int) : String?
+    byte_len = lookahead_byte_length(len)
+
+    # off the end of the string
+    if byte_len.nil?
+      @last_match = nil
+      return nil
+    end
+
+    result = @str.byte_slice(@byte_offset, byte_len)
+    @byte_offset += byte_len
+    @last_match = StringMatchData.new(result)
+    result
   end
 
   # Scans the string _until_ the *pattern* is matched. Returns the substring up
@@ -203,6 +233,18 @@ class StringScanner
     match.size if match
   end
 
+  # Advances the offset by *len* chars. Prefer this to `scanner.offset += len`,
+  # since that can cause a full scan of the string in the case of multibyte
+  # characters.
+  #
+  # NOTE: If there are less than the requested number of characters
+  # remaining in the string, this method will return nil and _not advance
+  # the scan head_. To move the scan head to the very end, use `#terminate`.
+  def skip(len : Int) : Int32?
+    match = scan(len)
+    match.size if match
+  end
+
   # Attempts to skip _until_ the given *pattern* is found after the scan
   # offset. In other words, the pattern is not anchored to the current scan
   # offset.
@@ -254,6 +296,14 @@ class StringScanner
   # :ditto:
   def check(pattern : Char) : String?
     match(pattern, advance: false, anchored: true)
+  end
+
+  # :ditto:
+  def check(pattern : Int) : String?
+    scan_len = lookahead_byte_length(pattern) || return nil
+    result = @str.byte_slice(@byte_offset, scan_len)
+    @last_match = StringMatchData.new(result)
+    result
   end
 
   # Returns the value that `#scan_until` would return, without advancing the
